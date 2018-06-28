@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# For Safety
+set -e
+
+# Work Directory
+WORK=$(mktemp -d /tmp/XXXXXX)
+trap "rm -rf $WORK" EXIT
+
+# Final Wallpaper Size
+WIDTH=1920
+HEIGHT=1080
+
+# Usage Message
+usage() {
+   echo "Usage: [-w] width [-h] height [-o] output input"
+   exit 0
+}
+
+# Output Image
+OUTDIR=$(pwd)
+
+# Command Flags
+while getopts 'w:h:f:o:' flag; do
+   case "$flag" in
+      w) WIDTH=$OPTARG ;;
+      h) HEIGHT=$OPTARG ;;
+      o) OUTDIR=$OPTARG ;;
+      ?) usage ;;
+   esac
+done
+
+shift $(( OPTIND-1 ))
+
+for IMAGE_PATH in "$@"; do
+   if [ -z $IMAGE_PATH ]; then
+      usage
+   fi
+   
+   # Paths to images
+   OUTPUT="${IMAGE_PATH%.*}_pape.jpg"
+   SIDES="${IMAGE_PATH%.*}_sides.jpg"
+   SCALED="${IMAGE_PATH%.*}_scaled.jpg"
+   
+   # Dimensions of input
+   IW=$(identify -format "%w" $IMAGE_PATH)
+   IH=$(identify -format "%h" $IMAGE_PATH)
+   
+   # Get differences in dimensions
+   WDIFF=$(( $WIDTH-$IW ))
+   HDIFF=$(( $HEIGHT-$IH ))
+   
+   #Default directions
+   SCALE_TO="$WIDTH"x
+   FIRST="NORTH"
+   SECOND="SOUTH"
+   
+   # Find direction to scale to
+   if [ "$HDIFF" -lt "$WDIFF" ]; then
+      SCALE_TO=x"$HEIGHT"
+      FIRST="EAST"
+      SECOND="WEST"
+   fi
+   
+   # Scale the input
+   convert -geometry "$SCALE_TO" "$IMAGE_PATH" "$WORK/$SCALED"
+
+   # Create blurred versions for the sides
+   cp "$WORK/$SCALED" "$WORK/$SIDES"
+   convert -resize 10% -gaussian 0x3 -resize 1000% "$WORK/$SIDES" "$WORK/$SIDES"
+   
+   # Composite the images
+   convert -size "$WIDTH"x"$HEIGHT" xc:black "$WORK/$OUTPUT"
+   composite -gravity $FIRST "$WORK/$SIDES" "$WORK/$OUTPUT" "$WORK/$OUTPUT"
+   composite -gravity $SECOND "$WORK/$SIDES" "$WORK/$OUTPUT" "$WORK/$OUTPUT"
+   composite -gravity CENTER "$WORK/$SCALED" "$WORK/$OUTPUT" "$WORK/$OUTPUT"
+   cp "$WORK/$OUTPUT" "$OUTDIR"
+done
